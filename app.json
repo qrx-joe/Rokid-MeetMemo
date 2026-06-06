@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/contact-card/contact-card"
+  ],
+  "window": {
+    "navigationBarTitleText": "MeetMemo",
+    "navigationBarBackgroundColor": "#000000",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#000000",
+    "viewport": {
+      "width": "device-width"
+    }
+  }
+}
