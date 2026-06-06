@@ -2,33 +2,30 @@
 
 ## Current Focus
 
-Get a **single hard-coded contact card rendering on the Rokid AR glasses**. Eyes-on validation before any parser or storage code.
+Wire the navigation backbone: `pages/index/index.ink` as the home page, and `pages/followups/followups.ink` for pending follow-ups. Then voice integration as a separate milestone.
 
 ## Why this focus
 
-The original Day 1–7 milestone wrote files in isolation for a week before seeing anything render. That hides every layout, theme-token, and InkView quirk until late. Instead: shortest possible path to "I see a card on the device", then iterate.
+Capture → contact-card flow now exists end-to-end (text → store → display). The next leverage point is **return visits**: a user who saved someone two days ago needs a way to find them and check their pending follow-ups. That requires `index` (recent contacts + follow-up count) and `followups` (list view). Without these two, the app forgets everything after the first save from a user's point of view.
 
 ## Next 3 Tasks (in strict order)
 
-1. **Minimal viable shell that renders on device.**
-   - Create `app.json`, `app.js`, `pages/contact-card/contact-card.ink`.
-   - The `.ink` page renders ONE hard-coded contact object (王磊 example) — no input, no storage, no navigation, no parser.
-   - Follow `SPEC.md` §5 (480px width, black background, card style, theme tokens) and `.agents/skills/aiui-dev/SKILL.md` §6.
-   - Push to Rokid glasses. Confirm the card is readable and within the 120–380px height envelope.
-   - Definition of done: a photo or screenshot of the card on the device.
+1. **`pages/index/index.ink` — home page.**
+   - Sections: "Recent" (latest 3–5 contacts from `contactStore.listContacts()`) + "Follow-ups" badge (count from `contactStore.listFollowups()`).
+   - Primary CTA: "Start quick note" → `wx.navigateTo` to capture.
+   - Tap on a recent contact → navigate to contact-card with `?id=`.
+   - Empty state: short copy + only the "Start quick note" button.
+   - Make this the new homepage in `app.json`; capture becomes a sub-route (navigated to from index).
 
-2. **Capture page with inline-editable confirmation card.**
-   - Create `pages/capture/capture.ink` and `services/parser.js`.
-   - The parser is a stub: input string goes verbatim into `notes`, all structured fields are `"待补充"`. NO regex, NO date extraction. See `SPEC.md` §6.1.
-   - The confirmation card is the inline editor — every field is a `<textarea>` or `<input>` the user can fill before saving.
-   - Save into an in-memory array in `services/contact-store.js` (real persistence comes after).
+2. **`pages/followups/followups.ink` — pending follow-ups list.**
+   - Sections per `SPEC.md` §10.4: Pending + Completed (MVP scope).
+   - Each row: title, due date, source contact name (resolved via `contactStore.getContact(contactId)`).
+   - Tap row to open the source contact card; long-press / dedicated button to mark done.
+   - Empty state: short copy, link back to index.
 
-3. **Home page + follow-up generation.**
-   - Create `pages/index/index.ink` (recent contacts + follow-up count) and `pages/followups/followups.ink`.
-   - When a confirmed contact has both `nextAction` and `followUpAt`, generate one follow-up. See `SPEC.md` §7.
-   - Wire navigation between home → capture → contact-card → followups.
-
-After these three: storage adapter (real `wx.storage`), voice integration, then LLM parser.
+3. **`services/demo-data.js` extraction (only if needed).**
+   - If the home page wants more than the one seeded contact to look populated, move the demo seed out of `contactStore` into `services/demo-data.js` and have `contactStore` load it conditionally.
+   - **Skip this task entirely** if one demo contact is enough to validate the UI on device.
 
 ## Do Not Do Yet
 
@@ -37,13 +34,20 @@ After these three: storage adapter (real `wx.storage`), voice integration, then 
 - Do not build CRM-level relationship graphs.
 - Do not write any regex-based parser (see `SPEC.md` §6.2).
 - Do not add `priority` to the data model.
-- Do not invest in a browser HTML mock — device is available.
-- Do not commit yet; the user will decide when to commit after reviewing all amendments.
+- Do not swap `contactStore` to `wx.storage` until the navigation backbone is verified on device — keeping it in-memory makes iteration faster and an iteration crash won't corrupt state.
+- Do not add LLM parsing until index + followups feel right on device.
 
 ## Definition Of Done For The Current Focus
 
-A still photo or short clip taken of the Rokid glasses showing the 王磊 contact card rendered from `pages/contact-card/contact-card.ink`, hardcoded data, fixed at 480px width, black background, AIUI theme tokens applied, on the actual device.
+User can:
+1. Open the app and land on `pages/index/index.ink`.
+2. See recent contacts and a pending follow-up count.
+3. Tap "Start quick note" → capture → save → bounce back to index with the new contact visible.
+4. Tap a recent contact → see the relationship card.
+5. Tap the follow-up count → see the pending list.
 
-## Reminder
+Verified on the Rokid AR glasses with a screenshot or short clip.
 
-If any of the above starts to feel like "I should plan more first", that is the failure mode. The plan is already too long. Build the smallest visible thing on the device, then react to what you see.
+## Pending Device Verification (carried over)
+
+Before starting the next 3 tasks above, please run the verification listed in `TODO.md` → Device Verification. If the current capture → contact-card flow has rendering or runtime issues on device, fixing them is higher priority than building more pages.

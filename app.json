@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/capture/capture",
     "pages/contact-card/contact-card"
   ],
   "window": {

@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "联系人卡片",
-  "description": "Display a single structured relationship card for one captured contact. MVP step 1: hard-coded sample data (王磊). Inputs from capture/store will replace the inline data once those flows land.",
+  "description": "Display a structured relationship card. Reads ?id= from navigation query and pulls from services/contact-store. When no id is provided (e.g. opened standalone for demo), falls back to the seeded demo contact so the page is always renderable.",
   "schema": {
     "data": {
       "type": "object",
@@ -29,29 +29,48 @@
 </script>
 
 <script setup>
-// Inline sample data on purpose: the MVP "see one card on the device" step
-// must not depend on services/ or storage that don't exist yet.
-// Once capture + contact-store land, this hard-coded object moves into
-// services/demo-data.js and is loaded via navigation params.
-// See Docs/SPEC.md §6 (architecture) and §7 (data model).
+import { contactStore, __internal } from '../../services/contact-store.js';
+
+// Start with a safe empty shape so the template never dereferences null
+// before onLoad finishes (mini-program data binding evaluates immediately).
+const EMPTY_CONTACT = {
+  id: '',
+  name: '加载中...',
+  role: '',
+  organization: '待补充',
+  context: '',
+  interests: [],
+  nextAction: '',
+  followUpAt: '',
+  notes: ''
+};
+
 export default {
   data: {
-    contact: {
-      id: 'contact_demo_wanglei',
-      name: '王磊',
-      role: '教育 SaaS 创始人',
-      // Per SPEC.md §7: unknown fields stay '待补充', never invented.
-      organization: '待补充',
-      context: 'AI 创业活动',
-      interests: ['AIUI Demo'],
-      nextAction: '下周二发送 Demo 资料',
-      followUpAt: '2026-06-09',
-      notes: '对眼镜端低打扰交互感兴趣'
-    }
+    contact: EMPTY_CONTACT
   },
 
-  onLoad() {
-    console.log('[MeetMemo] contact-card loaded', this.data.contact.id);
+  async onLoad(query) {
+    const requestedId = (query && query.id) ? query.id : null;
+    let contact = null;
+
+    if (requestedId) {
+      contact = await contactStore.getContact(requestedId);
+      if (!contact) {
+        console.warn('[MeetMemo] contact id not found, falling back to demo', requestedId);
+      }
+    }
+
+    // Fallback: no id (standalone open) OR id lookup failed.
+    // Per SPEC.md §6.1, do not invent data — but the seeded demo is
+    // explicitly intended to keep this page renderable in isolation.
+    if (!contact) {
+      contact = await contactStore.getContact(__internal.DEMO_CONTACT_ID);
+    }
+
+    if (contact) {
+      this.setData({ contact });
+    }
   }
 };
 </script>
@@ -65,8 +84,8 @@ export default {
         <text class="role" ink:if="{{ contact.role }}">{{ contact.role }}</text>
       </view>
 
-      <!-- Secondary line: organization + context. Hidden when both placeholder. -->
-      <view class="meta" ink:if="{{ contact.organization !== '待补充' || contact.context }}">
+      <!-- Secondary line: organization + context. Hidden when both placeholder/empty. -->
+      <view class="meta" ink:if="{{ (contact.organization && contact.organization !== '待补充') || contact.context }}">
         <text class="meta-org" ink:if="{{ contact.organization && contact.organization !== '待补充' }}">{{ contact.organization }}</text>
         <text class="meta-sep" ink:if="{{ contact.organization && contact.organization !== '待补充' && contact.context }}"> · </text>
         <text class="meta-ctx" ink:if="{{ contact.context }}">{{ contact.context }}</text>
