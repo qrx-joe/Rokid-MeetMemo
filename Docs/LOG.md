@@ -178,6 +178,75 @@ This is now the third stacked commit without device verification. NEXT.md is exp
 - `services/demo-data.js` extraction
 - Date picker for `followUpAt`
 
+## 2026-06-06 (late evening — pivot to reference-aligned project)
+
+### The trigger
+
+User dropped `reference/rokid-lens-coach/` — a complete AIUI demo project — and asked: *"对照看看你按要求实现了吗?"*. The honest answer was **no**, and the differences were structural, not cosmetic.
+
+### Four categories of gap identified
+
+1. **Fatal — interaction model**
+
+   The reference project's `pages/index/index.ink` is driven entirely by `onKeyDown(Enter | Backspace)` plus `speechSynthesis` for TTS. Rokid AR glasses have **no touchscreen and no keyboard**. Every `bindtap`, `<textarea>`, `<input>`, and `wx.navigateTo`-based navigation MeetMemo built across 4 pages is unusable on the actual device.
+
+2. **Major — missing toolchain**
+
+   Reference has `package.json` (scripts.test), `.aixignore`, `lib/` (instead of `services/`), `test/` with Node's built-in test runner, and a documented `.aix` packaging step. MeetMemo had none of these.
+
+3. **Substantive — SKILL.md vs runtime mismatch**
+
+   `SKILL.md` recommends `var(--token)` everywhere. The reference project uses **hex literals exclusively** (`#40FF5E`, `rgba(64, 255, 94, 0.4)`). The official `@yodaos-pkg/create-aiui-agent` scaffold does the same. Tokens are likely unsupported by the current Ink build.
+
+   Reference also explicitly avoids complex inline `ink:if` expressions: *"Uses precomputed template fields instead of complex inline template expressions for better AIUI compatibility."* MeetMemo's `ink:if="{{ (a && a !== '待补充') || b }}"` form may fail to parse on real Ink.
+
+4. **Configuration — `<script def>` and `app.json`**
+
+   Reference uses `<script type="application/json" def>` (with explicit MIME type). MeetMemo used the bare `<script def>`. Reference `app.json` is minimal (no `navigationBarBackgroundColor`, no `backgroundColor`, no `navigationBarTextStyle`) — those extra fields probably ignored by Ink.
+
+### Windows toolchain investigation result
+
+The reference project's `aiui-open` / `aiui-aix` are macOS binaries (no Windows release on GitHub — `releases` API returns `[]`). However, the npm scope `@yodaos-pkg/` ships **cross-platform** packages:
+
+| Package | Role |
+| --- | --- |
+| `@yodaos-pkg/ink` 0.12.3 | Ink Web SDK (WASM in browser) |
+| `@yodaos-pkg/ink-vfs-server` 0.1.0 | HTTP VFS exposing app files |
+| `@yodaos-pkg/aix` 0.6.0 | AIX **Reader** (not packager) |
+| `@yodaos-pkg/create-aiui-agent` 2.1.2 | Project scaffold |
+
+This means **Windows users get a full local browser preview via npm**, no platform binaries required. The only step still macOS-bound is the final `.aix` packaging for Lingzhu upload.
+
+### What this round shipped
+
+- `package.json` rewritten with `scripts.start`, `scripts.test`, dev dependencies.
+- `.aixignore` modeled on the reference project's exclusion list.
+- `dev-server.js` — Express host that mounts the Ink SDK at `/ink`, mounts the VFS middleware at `/ink-vfs`, and serves the preview shell from `public/`.
+- `public/index.html` — canvas + Ink WASM bootstrap; the user opens this in a browser to see the real Ink runtime render the project.
+- Pre-serve staging: `dev-server.js` copies only `app.json`, `app.js`, `AGENTS.md`, `pages/`, `services/`, `assets/` into `.ink-build/` and points the VFS at that subdir. `node_modules`, `.git`, `Docs`, `reference` never reach the runtime.
+- Verified: `npm start` works on Windows; manifest contains 9 expected files; `app.json` reachable through VFS; Ink WASM downloads with the correct `Content-Type`.
+- `README.md` rewritten in the lens-coach style: Demo Flow, Project Structure, Prerequisites, Local Development, Packaging, Upload, Design Rules, Troubleshooting.
+- `SPEC.md` extended with §3.3 local toolchain, §3.4 `.ink` conventions alignment, §5.7 CSS token reality, §5.8 template expression constraints, §6.3 interaction model for AR glasses, plus a note on `services/` → `lib/` migration.
+
+### What this round deliberately did NOT do
+
+- The four existing pages (capture/contact-card/followups/index) are **not yet rewritten**. They still use `bindtap` / `<input>` / `<textarea>` and likely contain `var(--token)` calls. The next milestone is the HUD rewrite, and trying to "patch" the wrong UI before then would waste effort.
+- `services/` → `lib/` rename deferred to the HUD rewrite (the new HUD will declare what `lib/` modules it needs; rename now would create churn for code that may be deleted).
+- `.aix` packaging path remains open. Decision: continue on browser preview; arrange a Mac session once the HUD is renderable end-to-end.
+
+### Decisions index (updated)
+
+| Decision | Recorded in |
+| --- | --- |
+| Drop touchscreen UI assumptions; default to HUD + onKeyDown + voice | `SPEC.md` §6.3 |
+| Use hex literals, not `var(--token)`, until tokens are runtime-confirmed | `SPEC.md` §5.7 |
+| Precompute booleans for `ink:if`; avoid compound expressions in templates | `SPEC.md` §5.8 |
+| `<script type="application/json" def>` is the documented form | `SPEC.md` §3.4 |
+| Local preview via `@yodaos-pkg/ink` + `ink-vfs-server` + express (Windows-friendly) | `SPEC.md` §3.3 |
+| `services/` → `lib/` migration deferred to HUD rewrite | `SPEC.md` §6 note |
+| HUD: 480 × 400 fixed safe zone (supersedes earlier 120–380 height range) | `SPEC.md` §5 |
+
+
 
 
 

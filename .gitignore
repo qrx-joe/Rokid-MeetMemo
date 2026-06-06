@@ -42,3 +42,10 @@ reference/rokid_*.html
 .venv/
 __pycache__/
 *.pyc
+.ink-build/
+
+# Vendor reference download (user-dropped, has its own .git)
+rokid-lens-coach*/
+
+# Claude Code local state
+.claude/

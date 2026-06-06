@@ -60,8 +60,12 @@ The project root must stay free of vendor dumps and reference material. Enforced
 ├── assets/              # Icons, fonts, images
 ├── Docs/                # Project management docs (SPEC, TODO, NEXT, LOG, plans)
 ├── .agents/             # Installed Claude/agent skill library (aiui-dev, ...)
-├── reference/           # READ-ONLY vendor artifacts (scraped docs, bundle.js)
-│                        # See reference/README.md
+├── reference/           # READ-ONLY vendor artifacts (scraped docs, bundle.js,
+│                        # lens-coach reference project). See reference/README.md
+├── public/              # Browser preview shell (index.html for dev-server)
+├── dev-server.js        # Local browser preview entry (Express + ink + VFS)
+├── package.json         # Node tooling (test, start, deps)
+├── .aixignore           # Files excluded from .aix package
 ├── .gitignore
 └── .git/
 ```
@@ -71,6 +75,55 @@ Rules:
 - Do not put project source files under `reference/`.
 - Do not import code from anything inside `reference/`.
 - Large vendor bundles in `reference/` are git-ignored by default (see `.gitignore`).
+- `.ink-build/` is the staging dir produced by `dev-server.js`; git-ignored, regenerated on every `npm start`.
+
+## 3.3 Local Browser Preview Toolchain
+
+This project ships a **Windows-friendly local preview** that does not depend on macOS-only Rokid binaries.
+
+Stack:
+
+- `@yodaos-pkg/ink` — Ink Web SDK (WASM runtime in the browser)
+- `@yodaos-pkg/ink-vfs-server` — HTTP VFS exposing project files to the runtime
+- `express` — host process for the VFS middleware + static preview shell
+
+Entry: `npm start` → `node dev-server.js` → open `http://127.0.0.1:8081`.
+
+Before serving, `dev-server.js` stages only runtime files (`app.json`, `app.js`, `AGENTS.md`, `pages/`, `services/`, `assets/`) into `.ink-build/`. `node_modules`, `.git`, `Docs`, `reference` never leak into the VFS manifest.
+
+What the preview validates:
+
+- Page layout at 480 × 400
+- WXML directives (`ink:if`, `ink:for`) and bindings
+- WXSS theme tokens vs hex literals (whether `var(--card-padding)` exists at runtime)
+- `bindtap`, `onKeyDown` event delivery, `setData` shape, `scroll-view` behavior
+
+What the preview does NOT validate (only the device exercises these):
+
+- `wx.media.*` (camera, recorder)
+- `wx.speech.startRecognition`
+- `LanguageModel`
+- Real-glasses lighting, focus, and key hardware behavior
+
+The browser preview is the primary day-to-day iteration loop; the device is the verification loop before each demo.
+
+## 3.4 `.ink` SFC Conventions (alignment notes)
+
+Cross-checked against the `rokid-lens-coach` reference project and `@yodaos-pkg/create-aiui-agent` scaffold:
+
+- `<script def>` must include `type="application/json"`. The bare `<script def>` form may parse on some Ink builds but is not the documented form. Example:
+
+  ```html
+  <script type="application/json" def>
+  { "navigationBarTitleText": "..." }
+  </script>
+  ```
+
+- `<script setup>` exports the page object directly via `export default { ... }`. Do not wrap with `defineComponent` or any other framework helper.
+
+- `<page>` uses WXML-style syntax; directives use the `ink:` prefix (`ink:if`, `ink:elif`, `ink:else`, `ink:for`, `ink:key`).
+
+- `<style>` is WXSS, layout-compatible with CSS but with the runtime constraints in §5.
 
 Recommended page structure:
 
@@ -108,15 +161,67 @@ Before using an AIUI or `wx.*` API, check the relevant reference file first. Do 
 ## 5. Wearable UI Rules
 
 - Standard width: 480px.
-- Recommended height: 120px to 380px.
+- Recommended height: **400px** (fixed safe zone per `rokid-lens-coach` reference; supersedes the earlier 120–380px range).
 - Use card-style UI.
-- Default background should be black or token-based dark surface.
-- Prefer AIUI theme tokens such as `var(--color-primary)`, `var(--color-background)`, `var(--color-surface)`, `var(--color-text-primary)`, `var(--spacing-md)`, and `var(--radius-md)`.
+- Default background should be **black `#000000`** (hex literal, not `var(--color-background)` — see §5.7).
+- Accent color: `#40FF5E` (Rokid green). Use hex literal directly; see §5.7.
+- Border width: 1.5px on cards.
+- Border radius: 12px.
+- Type scale: `32/40` (title), `24/32` (primary), `20/26` (label), `18/24` (body), `16/22` (hint).
 - Avoid long paragraphs.
 - Avoid dense tables.
 - Avoid emoji in UI copy unless explicitly requested.
 - Avoid large solid color blocks.
 - Prioritize glanceable text and clear hierarchy.
+
+## 5.7 CSS Token Reality (overrides SKILL.md guidance)
+
+`SKILL.md` recommends preferring `var(--color-primary)`, `var(--card-padding)`, etc. **This was the source-of-truth document, not the runtime truth.** The `rokid-lens-coach` reference project and the official `@yodaos-pkg/create-aiui-agent` scaffold **both use hex literals exclusively** (`#40FF5E`, `#000000`, `rgba(64, 255, 94, 0.4)`). No `var(--token)` calls anywhere.
+
+Rule:
+
+- **Default to hex literals for color, spacing, border, and radius values.** Match the values in §5.
+- Use a `var(--*)` token only when verified to render correctly on the target Ink build.
+- If a token name appears in `SKILL.md` but is unknown to the runtime, the style silently falls back to the default — often a transparent/white default that makes cards unreadable.
+
+This is a runtime-vs-spec gap; until the Ink runtime publishes a confirmed token registry, hex literals are the safer surface.
+
+## 5.8 Template Expression Constraints
+
+The `rokid-lens-coach` reference explicitly states:
+
+> Uses **precomputed template fields** instead of complex inline template expressions for **better AIUI compatibility**.
+
+Rule:
+
+- Templates evaluate **simple references** (`{{ greeting }}`) and **single boolean refs** in directives (`ink:if="{{ isStepOneActive }}"`).
+- Compound expressions, string comparisons, ternaries, and `&&`/`||` chains inside `ink:if` are **discouraged**. Precompute the boolean in `<script setup>` and bind the precomputed flag.
+
+Bad:
+
+```html
+<view ink:if="{{ (contact.organization && contact.organization !== '待补充') || contact.context }}">
+```
+
+Good:
+
+```javascript
+// In <script setup>:
+function deriveView(data) {
+  return {
+    ...data,
+    hasMeta: Boolean(
+      (data.organization && data.organization !== '待补充') || data.context
+    ),
+  };
+}
+```
+
+```html
+<view ink:if="{{ hasMeta }}">
+```
+
+This keeps the template parser on its proven happy path and makes the boolean intent obvious in JS where it can be tested.
 
 ## 6. Architecture Rules
 
@@ -133,37 +238,64 @@ Do not mix parsing logic directly into page templates. Use a parser service.
 
 Do not add abstractions before they remove real duplication or protect an unstable boundary.
 
-## 6.1 Parser Strategy
+> **Note on directory naming**: the `rokid-lens-coach` reference uses `lib/` instead of `services/`. MeetMemo will migrate `services/` → `lib/` during the HUD rewrite (see `Docs/NEXT.md`), aligning with the community convention. The interface contract stays the same.
+
+## 6.3 Interaction Model (AR glasses)
+
+**Rokid AR glasses have no touchscreen and no keyboard.** Inputs available to an Ink app are:
+
+- Hardware key events (Enter, Backspace, possibly side keys) via `onKeyDown(event)`
+- Voice via `SpeechRecognition` (when host capability is present)
+- Camera frames via `wx.media.createCameraContext()` (when permitted)
+
+UI patterns from web / mini-program / handheld phones **do not apply**:
+
+| Pattern | Status on glasses | Why |
+| --- | --- | --- |
+| `bindtap` on a button | **Avoid** (works in browser preview only) | No touch surface on the device |
+| `<textarea>`, `<input>` | **Avoid** | No keyboard; user cannot type |
+| Multi-page navigation via `wx.navigateTo` | **Avoid for primary flows** | No back button gesture; pile-up of stacks confuses |
+| `bindchange` on `<switch>` | **Avoid** | No selection focus mechanism |
+| List of tap targets | **Avoid** | User cannot point at one |
+
+Patterns that **do** apply:
+
+- One-screen-at-a-time HUD with state-driven content
+- `onKeyDown` for Enter (advance / confirm) and Backspace (back / exit)
+- Voice prompts to gather structured input ("Now say their role")
+- TTS feedback via `speechSynthesis.speak(new SpeechSynthesisUtterance(text))`
+- Storage via `wx.setStorageSync(key, json)` and `wx.getStorageSync(key)`
+
+Rule:
+
+- New pages MUST default to a HUD + `onKeyDown` model.
+- A `bindtap` or `<input>` is allowed only when explicitly justified for the browser-preview environment (e.g. debugging probes), and must not gate the primary user flow.
+
+## 6.4 Parser Strategy
 
 The MeetMemo development plan §8 originally proposed regex-based fixed-pattern parsing in Phase 1. **This is rejected.** Pattern matching ("记一下，{name}", "下周二") is fragile (breaks on "帮我记一下哈"), produces invented fields when patterns partially match, and the entire regex codebase becomes garbage the day an LLM is wired in.
 
-Phase 1 — Zero parsing, good interaction:
+Phase 1 — Zero parsing, voice-prompted authoring:
 
-- The full input string is stored unchanged in `notes`.
-- All structured fields (`name`, `role`, `organization`, `context`, `interests`, `nextAction`, `followUpAt`) default to `"待补充"` or empty.
-- The confirmation card is an **inline editor**, not a read-only preview. The user fills in (or corrects) each field with one tap before saving.
+- The raw input string is stored unchanged in `notes`.
+- All structured fields (`name`, `role`, `organization`, `context`, `interests`, `nextAction`, `followUpAt`) default to `""` or `"待补充"`.
+- The HUD walks the user through each missing field via voice prompts (e.g. "What is their role?" → `SpeechRecognition` answer → set the field).
 - The parser service still exists, returning `{ notes, status: 'needs-input' }`. It exists as a stable seam, not as logic to maintain.
 
 Phase 2 — LLM extraction:
 
 - Replace the parser body with a single LLM call that returns the structured schema.
-- Apply schema validation. Unknown fields stay `"待补充"`. Never let the LLM invent missing facts (no hallucinated `organization` because the model "felt" it should exist).
-- Keep the confirmation editor intact. LLM output is a suggestion, not a save.
+- Apply schema validation. Unknown fields stay `"待补充"`. Never let the LLM invent missing facts.
+- The voice-prompted authoring HUD still exists, but skips fields the LLM filled with confidence.
 
-Why this matters:
-
-- Phase 1 ships in hours, not days.
-- The throwaway code in Phase 1 is roughly 10 lines, not a regex engine.
-- The interaction (always-editable confirmation card) is correct for both phases — no UX regression when LLM lands.
-
-## 6.2 Parser Anti-patterns
+## 6.5 Parser Anti-patterns
 
 Do not:
 
 - Apply Chinese-language regex heuristics to extract people, dates, or actions.
 - Auto-default `priority` to `"medium"` from voice input.
 - Auto-default `organization` to a guess derived from `role`.
-- Build a "smart" date parser ("下周二") before the LLM stage — let the user type or pick the date.
+- Build a "smart" date parser ("下周二") before the LLM stage — let the user speak the date or the HUD pick today + 7.
 
 ## 7. Data Model
 

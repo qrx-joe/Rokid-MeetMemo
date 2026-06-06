@@ -1,0 +1,16 @@
+{
+  "name": "meetmemo-aiui",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "MeetMemo — offline conversation memory Agent for Rokid AI glasses. Active quick-note capture turned into structured relationship cards and follow-up tasks.",
+  "scripts": {
+    "start": "node dev-server.js",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@yodaos-pkg/ink": "^0.12.3",
+    "@yodaos-pkg/ink-vfs-server": "^0.1.0",
+    "express": "^5.2.1"
+  }
+}

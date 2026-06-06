@@ -2,64 +2,83 @@
 
 ## Current Focus
 
-**Stop writing new code. Verify on device.**
+**Open `http://127.0.0.1:8081` in a browser.** The local preview now renders the project through the real Ink WASM runtime. The next concrete decisions depend on what you actually see.
 
-Four pages and two services are in tree, all using the same minimal set of runtime assumptions. If those assumptions hold, the MVP UI loop is complete; if any one of them fails, the fix lands in roughly the same place across every page. Either way, the verification answer is short.
+```bash
+npm start
+# then open http://127.0.0.1:8081
+```
 
-## Why this focus
+Take one of three actions based on what the page shows:
 
-Three rounds of code without device verification is the carry. Continuing to stack more code (persistence, voice, LLM) before testing what is already written multiplies the rollback cost. The leverage is now on the device, not in the editor.
+1. **Pages render (even ugly)** — proceed to the HUD rewrite (Task #1 below). What's on screen now uses the wrong interaction model anyway; we are about to throw it out. The preview just confirmed the toolchain works.
+2. **Blank canvas + console error** — paste the `#log` element contents back. Most likely fixes are listed in the symptom table below.
+3. **Server fails to start** — port collision; either `taskkill /F /PID <pid>` on the 8081 holder or `PORT=8082 npm start`.
 
-## Verification Plan (single device session)
+## Next 3 Tasks (after toolchain validation)
 
-Run through `TODO.md` → Device Verification top to bottom. If any step fails, paste the InkView/devtools error and the failing page name; the fix lives in one of these known places:
+1. **HUD rewrite — `pages/index/index.ink` as a single Lens-Coach-style HUD.**
 
-| Symptom | Suspected assumption | Fix location |
+   Hard delete `pages/capture/`, `pages/contact-card/`, `pages/followups/`. Hard delete `services/` and replace with `lib/coach.js` style. The new HUD state machine:
+
+   ```
+   READY  → press Enter → LISTENING (voice capture) → THINKING (parse) → CONFIRMING (show card, Enter saves, Backspace discards) → SAVED → READY
+   ```
+
+   - Driven by `onKeyDown(Enter | Backspace)` only.
+   - `speechSynthesis` for spoken prompts at each state transition.
+   - `SpeechRecognition` for the LISTENING capture (with text-input fallback only when running in the browser preview).
+   - 480 × 400 layout, hex literals (no `var(--token)`), precomputed boolean fields for `ink:if`.
+   - Persist via `wx.setStorageSync('meetmemo:last-session', snapshot)` directly inside `lib/coach.js`.
+
+2. **`lib/coach.js` — deterministic state + mock parser.**
+
+   Mirror `reference/rokid-lens-coach/lib/coach.js`:
+
+   ```js
+   export function createInitialState() { ... }    // READY
+   export async function captureNote(raw) { ... }  // raw transcript → ContactDraft (mock for now)
+   export function confirmDraft(state) { ... }     // CONFIRMING → SAVED
+   export function nextPrompt(state) { ... }       // walk through missing fields one at a time
+   export function toStorageSnapshot(state) { ... }
+   ```
+
+   With Node test runner coverage in `test/coach.test.js`.
+
+3. **Borrow a Mac and pack the first `.aix`.**
+
+   Even before voice + LLM land, packaging the current HUD into `.aix` and uploading to Lingzhu validates the deployment surface. One Mac session, three commands:
+
+   ```bash
+   /path/to/aix-macos-universal pack --optimize -o dist/meetmemo.aix .
+   /path/to/aix-macos-universal list dist/meetmemo.aix
+   # then upload via Lingzhu Project Development
+   ```
+
+## Symptom → Fix Lookup (browser preview)
+
+| Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `currentTarget.dataset` undefined | Ink doesn't forward dataset | All pages — expand dataset reads into per-element handlers |
-| `setData` ignores dotted path | Ink doesn't honor `'a.b': v` form | `capture.handleField`, `index._refresh`, `followups._refresh` — rewrite as full object replacements |
-| `wx.navigateTo` rejects leading `/` | Ink uses relative paths only | Drop the `/` in all `navigateTo` calls (3 sites) |
-| `async onLoad`/`onShow` not awaited | Ink calls but ignores Promise | Convert to `.then()` chains — visible behavior identical |
-| `scroll-view max-height` ignored | Ink wants fixed `height` | Change `max-height: Npx` → `height: Npx` in capture/index/followups |
-| `var(--card-padding)` etc unknown | Token name differs in current Ink | Cross-check `.agents/skills/aiui-dev/SKILL.md` §5.4 — swap to nearest supported token |
-| `catchtap` does not stop propagation on `<button>` inside `<view bindtap>` | Ink button event model differs | Switch row body to `<view>` instead of `<view bindtap>`; move tap target to an inner `<text>` |
-| `onShow` never fires after navigateBack | Lifecycle gap | Add an explicit refresh trigger (custom event) or accept stale list until manual reload |
-
-## Next 3 Tasks (after verification passes)
-
-1. **Persistence: swap `contactStore` to `wx.storage`.**
-   - Use keys `meetmemo:contacts:v1` and `meetmemo:followups:v1`.
-   - Read-on-init, write-on-mutate. No in-memory cache invalidation logic in MVP — the store is the only writer.
-   - Keep the in-memory seeded demo as fallback ONLY when storage is empty (first launch).
-   - **The public adapter API must not change.** If a single page change is needed, the swap is wrong.
-
-2. **Voice input in capture (input mode).**
-   - Read `.agents/skills/aiui-dev/apis-wx.md` for `wx.speech.startRecognition` first.
-   - Add a mic button next to the textarea; press to start, press again to stop; transcript appended to the textarea value.
-   - Visible recording state (per `SPEC.md` §8). No auto-listen.
-   - Text input remains the primary path.
-
-3. **LLM parser (Phase 2).**
-   - Replace `parser.parse()` body with `LanguageModel.create() + session.prompt()` per SKILL.md §10.1.
-   - Output must conform to the Contact schema. Validation rejects unknown shapes.
-   - Confirmation card stays editable — LLM output is suggestion, not save.
+| `openFromVfs` fails 404 on `manifest` | VFS basePath mismatch | Confirm `curl http://127.0.0.1:8081/ink-vfs/apps/meetmemo/manifest` is 200; if not, `.ink-build/` empty → check `stageBundle()` |
+| WASM fails to instantiate | Wrong `Content-Type` | `curl -I http://127.0.0.1:8081/ink/pkg/ink_web_bg.wasm` should return `application/wasm` |
+| Canvas blank, no error | Page render path missing | Open devtools, check whether the page's `<script setup>` evaluated; common cause is a syntax error in `.ink` swallowed by the runtime |
+| Style looks broken (no border / wrong color) | `var(--token)` not recognized | Replace tokens with hex literals in the failing file (see `SPEC.md` §5.7) |
+| `ink:if` not gating content | Compound expression unsupported | Precompute boolean in `<script setup>` and bind the flag (see `SPEC.md` §5.8) |
+| `currentTarget.dataset` undefined | Dataset not forwarded by Ink | Convert dataset-dispatched handlers to per-element handlers |
+| `setData` dotted path no-op | Path syntax unsupported | Rewrite as `this.setData({ draft: { ...this.data.draft, [field]: value } })` |
 
 ## Do Not Do Yet
 
-- Do not begin any of the Next 3 Tasks until at least the capture → save → contact-card round trip is verified on device.
-- Do not add `priority` to the data model.
-- Do not write any regex-based parser (`SPEC.md` §6.2).
-- Do not over-engineer the storage swap — `wx.setStorage`/`wx.getStorage` is enough; no encryption, no migration tooling in MVP.
+- Do not patch the four legacy pages — they are scheduled for deletion in the HUD rewrite.
+- Do not add `priority`, regex parsing, or `services/demo-data.js`.
+- Do not chase `.aix` packaging on Windows; arrange Mac access when needed.
 - Do not enable always-on recording or background listening.
 
 ## Definition Of Done For The Current Focus
 
-A short clip taken on the Rokid AR glasses showing:
-1. App opens to `index` with 王磊 seed visible and "待跟进 1" badge.
-2. Tap "开始记录" → type a note → 下一步 → fill in name → 保存.
-3. App lands on `contact-card` showing the just-saved person.
-4. Navigate back to `index` → the new person appears at top of the recent list.
-5. Tap "待跟进" → followups list shows both 王磊's and the new person's pending follow-up (if a date was entered).
-6. Tap 完成 on one → moves to 已完成 section.
+A screenshot of `http://127.0.0.1:8081` showing either:
 
-If any step fails, the page where it fails plus the error message is enough to unblock the fix.
+- The current MeetMemo `index` page rendered on the 480 × 400 canvas (even if styled wrong), confirming the toolchain works end-to-end. Then HUD rewrite begins.
+- A clearly readable error in the `#log` element. Then we fix that error first.
+
+Either way: **one browser session, one screenshot, decision unblocked**.

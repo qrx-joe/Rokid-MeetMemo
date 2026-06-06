@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MeetMemo — Ink Dev Preview</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body {
+        margin: 0; padding: 0;
+        background: #0d0d0d;
+        color: #e6e6e6;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+      .stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        padding: 32px 16px;
+      }
+      .glasses {
+        /* Rokid HUD safe-zone: 480 x 400 per lens-coach reference. */
+        width: 480px;
+        height: 400px;
+        background: #000;
+        border: 1.5px solid rgba(64, 255, 94, 0.35);
+        border-radius: 16px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: 0 0 40px rgba(64, 255, 94, 0.08);
+      }
+      .glasses canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .meta {
+        max-width: 480px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #888;
+      }
+      .meta code {
+        background: #1a1a1a;
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: #b9ffb9;
+      }
+      .log {
+        max-width: 480px;
+        width: 100%;
+        max-height: 200px;
+        overflow: auto;
+        background: #111;
+        border: 1px solid #222;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .log .err { color: #ff7a7a; }
+      .log .ok  { color: #80ffaa; }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="meta">
+        <strong>MeetMemo</strong> — Ink runtime preview at
+        <code>480 × 400</code> (Rokid HUD safe zone). VFS:
+        <code>/ink-vfs/apps/meetmemo</code>.
+      </div>
+
+      <div class="glasses">
+        <canvas id="ink-canvas"></canvas>
+      </div>
+
+      <pre class="log" id="log"></pre>
+    </div>
+
+    <script type="module">
+      import { createInkView } from '/ink/index.js';
+
+      const logEl = document.getElementById('log');
+      function log(msg, cls) {
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent =
+          new Date().toISOString().slice(11, 19) + '  ' + msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        // Also mirror to devtools for richer detail.
+        console.log('[ink]', msg);
+      }
+
+      async function main() {
+        const canvas = document.getElementById('ink-canvas');
+        log('createInkView()...');
+        const view = await createInkView({
+          width: 480,
+          height: 400,
+          layoutMode: 'bounded',
+          canvas,
+          autoRender: true,
+        });
+        log('view created, binding DOM events', 'ok');
+        view.bindDomEvents({
+          keyboardTarget: window,
+          focusTarget: canvas,
+        });
+
+        log('openFromVfs(meetmemo)...');
+        await view.openFromVfs({
+          appId: 'meetmemo',
+          baseUrl: '/ink-vfs',
+        });
+        log('opened — first page should render now', 'ok');
+
+        // Convenience: clicking the canvas focuses it so keyboard handlers
+        // (onKeyDown for Enter/Backspace) actually receive events.
+        canvas.tabIndex = 0;
+        canvas.addEventListener('click', () => canvas.focus());
+        canvas.focus();
+      }
+
+      main().catch((err) => {
+        console.error(err);
+        log('FAILED: ' + (err?.stack || err?.message || String(err)), 'err');
+      });
+    </script>
+  </body>
+</html>
