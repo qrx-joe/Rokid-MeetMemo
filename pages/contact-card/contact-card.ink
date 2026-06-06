@@ -1,57 +1,155 @@
 <script def>
 {
   "navigationBarTitleText": "联系人卡片",
-  "description": "Display a structured relationship card. Reads ?id= from navigation query and pulls from services/contact-store. When no id is provided (e.g. opened standalone for demo), falls back to the seeded demo contact so the page is always renderable.",
+  "description": "Structured relationship card rendered as a compact Rokid HUD. Template conditions use precomputed booleans for Ink compatibility.",
   "schema": {
     "data": {
       "type": "object",
       "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "metaText": { "type": "string" },
+        "interestRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" }
+            },
+            "required": ["value"]
+          }
+        },
+        "nextAction": { "type": "string" },
+        "followUpAt": { "type": "string" },
+        "notes": { "type": "string" },
+        "contactId": { "type": "string" },
+        "hasRole": { "type": "boolean" },
+        "hasMeta": { "type": "boolean" },
+        "hasInterests": { "type": "boolean" },
+        "hasNextAction": { "type": "boolean" },
+        "hasFollowUpAt": { "type": "boolean" },
+        "hasNotes": { "type": "boolean" },
+        "hasPhoto": { "type": "boolean" },
+        "photoData": { "type": "string" },
+        "canDelete": { "type": "boolean" },
+        "isDeleteConfirm": { "type": "boolean" },
+        "selectedAction": { "type": "string" },
+        "actionRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "className": { "type": "string" }
+            },
+            "required": ["id", "label", "className"]
+          }
+        },
+        "primaryKeyHint": { "type": "string" },
+        "secondaryKeyHint": { "type": "string" },
+        "statusText": { "type": "string" },
+        "hasPhoto": { "type": "boolean" },
+        "photoData": { "type": "string" },
         "contact": {
           "type": "object",
           "properties": {
-            "id":           { "type": "string" },
-            "name":         { "type": "string" },
-            "role":         { "type": "string" },
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "role": { "type": "string" },
             "organization": { "type": "string" },
-            "context":      { "type": "string" },
-            "interests":    { "type": "array", "items": { "type": "string" } },
-            "nextAction":   { "type": "string" },
-            "followUpAt":   { "type": "string" },
-            "notes":        { "type": "string" }
+            "context": { "type": "string" },
+            "interests": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "nextAction": { "type": "string" },
+            "followUpAt": { "type": "string" },
+            "notes": { "type": "string" }
           },
-          "required": ["id", "name"]
+          "required": ["id", "name", "role", "organization", "context", "interests", "nextAction", "followUpAt", "notes"]
         }
       },
-      "required": ["contact"]
+      "required": ["name", "role", "metaText", "interestRows", "nextAction", "followUpAt", "notes", "contactId", "hasRole", "hasMeta", "hasInterests", "hasNextAction", "hasFollowUpAt", "hasNotes", "hasPhoto", "photoData", "canDelete", "isDeleteConfirm", "selectedAction", "actionRows", "primaryKeyHint", "secondaryKeyHint", "statusText", "contact"]
     }
   }
 }
 </script>
 
 <script setup>
+import wx from 'wx';
 import { contactStore, __internal } from '../../services/contact-store.js';
 
-// Start with a safe empty shape so the template never dereferences null
-// before onLoad finishes (mini-program data binding evaluates immediately).
-const EMPTY_CONTACT = {
-  id: '',
-  name: '加载中...',
-  role: '',
-  organization: '待补充',
-  context: '',
-  interests: [],
-  nextAction: '',
-  followUpAt: '',
-  notes: ''
-};
+const UNKNOWN = '待补充';
+
+function actionRow(id, label, selectedAction) {
+  return {
+    id,
+    label,
+    className: id === selectedAction ? 'card-action card-action-active' : 'card-action'
+  };
+}
+
+function createCardView(contact, ui = {}) {
+  const selectedAction = ui.selectedAction || 'return';
+  const isDeleteConfirm = Boolean(ui.isDeleteConfirm);
+  const organization = contact.organization && contact.organization !== UNKNOWN
+    ? contact.organization
+    : '';
+  const context = contact.context || '';
+  const metaParts = [organization, context].filter(Boolean);
+  const interests = Array.isArray(contact.interests) ? contact.interests : [];
+
+  return {
+    contactId: contact.id || '',
+    name: contact.name || UNKNOWN,
+    role: contact.role || '',
+    metaText: metaParts.join(' · '),
+    interestRows: interests.map(value => ({ value })),
+    nextAction: contact.nextAction || '',
+    followUpAt: contact.followUpAt || '',
+    notes: contact.notes || '',
+    contact,
+    hasRole: Boolean(contact.role),
+    hasMeta: metaParts.length > 0,
+    hasInterests: interests.length > 0,
+    hasNextAction: Boolean(contact.nextAction),
+    hasFollowUpAt: Boolean(contact.followUpAt),
+    hasNotes: Boolean(contact.notes),
+    hasPhoto: Boolean(contact.photo),
+    photoData: contact.photo || '',
+    canDelete: Boolean(contact.id && contact.id !== __internal.DEMO_CONTACT_ID),
+    selectedAction,
+    isDeleteConfirm,
+    actionRows: [
+      actionRow('return', '返回', selectedAction),
+      actionRow('delete', isDeleteConfirm ? '确认删除' : '删除联系人', selectedAction)
+    ],
+    primaryKeyHint: isDeleteConfirm ? 'Enter 确认删除' : 'Enter 执行',
+    secondaryKeyHint: isDeleteConfirm ? 'Back 取消' : '方向键选择 · Back 返回',
+    statusText: isDeleteConfirm ? 'Confirm' : 'Card'
+  };
+}
+
+function emptyView() {
+  return createCardView({
+    id: '',
+    name: '加载中',
+    role: '',
+    organization: UNKNOWN,
+    context: '',
+    interests: [],
+    nextAction: '',
+    followUpAt: '',
+    notes: ''
+  });
+}
 
 export default {
-  data: {
-    contact: EMPTY_CONTACT
-  },
+  data: emptyView(),
 
   async onLoad(query) {
-    const requestedId = (query && query.id) ? query.id : null;
+    const requestedId = query && query.id ? query.id : null;
     let contact = null;
 
     if (requestedId) {
@@ -61,153 +159,299 @@ export default {
       }
     }
 
-    // Fallback: no id (standalone open) OR id lookup failed.
-    // Per SPEC.md §6.1, do not invent data — but the seeded demo is
-    // explicitly intended to keep this page renderable in isolation.
     if (!contact) {
       contact = await contactStore.getContact(__internal.DEMO_CONTACT_ID);
     }
 
     if (contact) {
-      this.setData({ contact });
+      this.setData(createCardView(contact));
     }
+  },
+
+  onKeyDown(event) {
+    const code = event && event.code;
+    if (code === 'Backspace') {
+      if (this.data.isDeleteConfirm) {
+        this.setData(createCardView(this.data.contact, { selectedAction: 'delete' }));
+        return;
+      }
+      wx.navigateBack();
+      return;
+    }
+
+    if ((code === 'ArrowDown' || code === 'ArrowRight') && this.data.canDelete) {
+      this.setData(createCardView(this.data.contact, { selectedAction: 'delete' }));
+      return;
+    }
+
+    if ((code === 'ArrowUp' || code === 'ArrowLeft') && this.data.canDelete) {
+      this.setData(createCardView(this.data.contact, { selectedAction: 'return' }));
+      return;
+    }
+
+    if (code === 'Enter') {
+      this.runSelectedAction();
+    }
+  },
+
+  async runSelectedAction() {
+    if (this.data.selectedAction !== 'delete' || !this.data.canDelete) {
+      wx.navigateBack();
+      return;
+    }
+
+    if (!this.data.isDeleteConfirm) {
+      this.setData(createCardView(this.data.contact, {
+        selectedAction: 'delete',
+        isDeleteConfirm: true
+      }));
+      return;
+    }
+
+    await contactStore.deleteContact(this.data.contactId);
+    wx.navigateBack();
   }
 };
 </script>
 
 <page>
-  <view class="screen">
-    <view class="card">
-      <!-- Header: name is the primary glanceable line. -->
+<view class="page">
+    <view class="safe-zone">
+      <view class="top-row">
+        <view class="brand-mark">
+          <text class="brand-dot"></text>
+          <text class="brand-name">MeetMemo</text>
+        </view>
+        <text class="status">{{ statusText }}</text>
+      </view>
+
       <view class="header">
-        <text class="name">{{ contact.name }}</text>
-        <text class="role" ink:if="{{ contact.role }}">{{ contact.role }}</text>
+        <text class="name">{{ name }}</text>
+        <text class="role" ink:if="{{ hasRole }}">{{ role }}</text>
+        <text class="meta" ink:if="{{ hasMeta }}">{{ metaText }}</text>
       </view>
 
-      <!-- Secondary line: organization + context. Hidden when both placeholder/empty. -->
-      <view class="meta" ink:if="{{ (contact.organization && contact.organization !== '待补充') || contact.context }}">
-        <text class="meta-org" ink:if="{{ contact.organization && contact.organization !== '待补充' }}">{{ contact.organization }}</text>
-        <text class="meta-sep" ink:if="{{ contact.organization && contact.organization !== '待补充' && contact.context }}"> · </text>
-        <text class="meta-ctx" ink:if="{{ contact.context }}">{{ contact.context }}</text>
+      <view class="photo-thumb-wrap" ink:if="{{ hasPhoto }}">
+        <image class="photo-thumb" src="{{ photoData }}" mode="aspectFit" />
       </view>
 
-      <!-- Interests: chip-like inline list. Nested ink:for is unsupported, so this stays flat.
-           Use ink:key="index" for string arrays (100% supported); skip the WeChat-style "*this"
-           shortcut which is not confirmed for Ink. -->
-      <view class="interests" ink:if="{{ contact.interests.length > 0 }}">
-        <view class="chip" ink:for="{{ contact.interests }}" ink:key="index">
-          <text class="chip-text">{{ item }}</text>
+      <view class="interests" ink:if="{{ hasInterests }}">
+        <view class="chip" ink:for="{{ interestRows }}" ink:key="value">
+          <text class="chip-text">{{ item.value }}</text>
         </view>
       </view>
 
-      <!-- Footer: next action + follow-up date — the action the user came here to remember. -->
-      <view class="footer" ink:if="{{ contact.nextAction }}">
-        <text class="footer-label">下一步</text>
-        <text class="footer-action">{{ contact.nextAction }}</text>
-        <text class="footer-date" ink:if="{{ contact.followUpAt }}">{{ contact.followUpAt }}</text>
+      <view class="action-card" ink:if="{{ hasNextAction }}">
+        <text class="action-label">下一步</text>
+        <text class="action-text">{{ nextAction }}</text>
+        <text class="action-date" ink:if="{{ hasFollowUpAt }}">{{ followUpAt }}</text>
+      </view>
+
+      <view class="note-card" ink:if="{{ hasNotes }}">
+        <text class="note-label">原文</text>
+        <text class="note-text">{{ notes }}</text>
+      </view>
+
+      <view class="card-actions" ink:if="{{ canDelete }}">
+        <view class="{{ item.className }}" ink:for="{{ actionRows }}" ink:key="id">
+          <text class="card-action-text">{{ item.label }}</text>
+        </view>
+      </view>
+
+      <view class="bottom-row">
+        <text class="key-hint">{{ primaryKeyHint }}</text>
+        <text class="key-hint">{{ secondaryKeyHint }}</text>
       </view>
     </view>
   </view>
 </page>
 
 <style>
-/* Width is enforced to AIUI's standard 480px; the runtime owns viewport. */
-.screen {
-  display: flex;
-  width: 480px;
-  background: var(--color-background);
-  padding: var(--spacing-md);
-  box-sizing: border-box;
-}
-
-/* One-card-per-screen layout per SPEC.md §5. Keep height inside 120–380px. */
-.card {
-  display: flex;
-  flex-direction: column;
+.page {
   width: 100%;
-  padding: var(--card-padding);
-  background: var(--color-surface);
-  border: var(--card-border-width) solid var(--card-border-color);
-  border-radius: var(--radius-md);
-  gap: var(--spacing-md);
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: #000000;
+  color: #f5f7fa;
+  font-family: HarmonyOS_SansSC_Regular;
 }
 
-.header {
+.safe-zone {
+  width: 480px;
+  height: 400px;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  justify-content: space-between;
+  box-sizing: border-box;
+  padding: 18px 22px;
+  border: 1.5px solid rgba(64, 255, 94, 0.4);
+  border-radius: 12px;
+  background: #000000;
 }
 
-.name {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  line-height: 1.2;
-}
-
-.role {
-  font-size: 16px;
-  color: var(--color-text-secondary);
-  line-height: 1.3;
-}
-
-.meta {
+.top-row,
+.bottom-row,
+.brand-mark {
   display: flex;
   flex-direction: row;
   align-items: center;
-  font-size: 13px;
-  color: var(--color-text-secondary);
 }
 
-.meta-org,
-.meta-sep,
-.meta-ctx {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+.top-row,
+.bottom-row {
+  justify-content: space-between;
+}
+
+.brand-dot {
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 12px;
+  border: 1.5px solid #40ff5e;
+  box-sizing: border-box;
+}
+
+.brand-name,
+.status,
+.key-hint {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.brand-name {
+  color: #40ff5e;
+  font-family: HarmonyOS_SansSC_Medium;
+}
+
+.status,
+.key-hint {
+  color: rgba(64, 255, 94, 0.8);
+}
+
+.header,
+.action-card,
+.note-card,
+.card-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  gap: 6px;
+}
+
+.name {
+  font-size: 32px;
+  line-height: 40px;
+  color: #f5f7fa;
+  font-family: HarmonyOS_SansSC_Medium;
+}
+
+.role {
+  font-size: 24px;
+  line-height: 32px;
+  color: rgba(245, 247, 250, 0.82);
+}
+
+.meta {
+  font-size: 18px;
+  line-height: 24px;
+  color: rgba(245, 247, 250, 0.62);
+}
+
+.photo-thumb-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.photo-thumb {
+  width: 120px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1.5px solid rgba(64, 255, 94, 0.4);
 }
 
 .interests {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
 
 .chip {
   display: flex;
   padding: 4px 10px;
-  border: var(--border-width-thin) solid var(--border-color-accent);
-  border-radius: var(--radius-sm);
+  border: 1.5px solid rgba(64, 255, 94, 0.7);
+  border-radius: 12px;
+  box-sizing: border-box;
 }
 
 .chip-text {
-  font-size: 13px;
-  color: var(--color-primary);
+  font-size: 16px;
+  line-height: 22px;
+  color: #40ff5e;
 }
 
-.footer {
-  display: flex;
-  flex-direction: column;
+.action-card,
+.note-card {
   gap: 4px;
-  padding-top: var(--card-footer-padding-y);
-  margin-top: var(--card-footer-margin-top);
-  border-top: var(--card-divider-width) solid var(--card-divider-color);
+  padding: 12px 14px;
+  border: 1.5px solid rgba(64, 255, 94, 0.55);
+  border-radius: 12px;
+  box-sizing: border-box;
 }
 
-.footer-label {
-  font-size: var(--card-footer-font-size);
-  color: var(--color-text-secondary);
-  text-transform: none;
+.action-label,
+.note-label {
+  font-size: 16px;
+  line-height: 22px;
+  color: rgba(64, 255, 94, 0.85);
 }
 
-.footer-action {
-  font-size: 15px;
-  color: var(--color-text-primary);
-  line-height: 1.3;
+.action-text {
+  font-size: 22px;
+  line-height: 30px;
+  color: #f5f7fa;
 }
 
-.footer-date {
-  font-size: 13px;
-  color: var(--color-primary);
+.action-date,
+.note-text {
+  font-size: 16px;
+  line-height: 22px;
+  color: rgba(245, 247, 250, 0.68);
+}
+
+.card-actions {
+  gap: 8px;
+}
+
+.card-action {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1.5px solid rgba(64, 255, 94, 0.32);
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+
+.card-action-active {
+  border-color: #40ff5e;
+}
+
+.card-action-text {
+  font-size: 16px;
+  line-height: 22px;
+  color: #f5f7fa;
+}
+
+.key-hint {
+  max-width: 320px;
 }
 </style>

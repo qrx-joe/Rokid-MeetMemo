@@ -1,0 +1,71 @@
+{
+  "navigationBarTitleText": "联系人卡片",
+  "description": "Structured relationship card rendered as a compact Rokid HUD. Template conditions use precomputed booleans for Ink compatibility.",
+  "schema": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "metaText": { "type": "string" },
+        "interestRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string" }
+            },
+            "required": ["value"]
+          }
+        },
+        "nextAction": { "type": "string" },
+        "followUpAt": { "type": "string" },
+        "notes": { "type": "string" },
+        "contactId": { "type": "string" },
+        "hasRole": { "type": "boolean" },
+        "hasMeta": { "type": "boolean" },
+        "hasInterests": { "type": "boolean" },
+        "hasNextAction": { "type": "boolean" },
+        "hasFollowUpAt": { "type": "boolean" },
+        "hasNotes": { "type": "boolean" },
+        "canDelete": { "type": "boolean" },
+        "isDeleteConfirm": { "type": "boolean" },
+        "selectedAction": { "type": "string" },
+        "actionRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "className": { "type": "string" }
+            },
+            "required": ["id", "label", "className"]
+          }
+        },
+        "primaryKeyHint": { "type": "string" },
+        "secondaryKeyHint": { "type": "string" },
+        "statusText": { "type": "string" },
+        "contact": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "organization": { "type": "string" },
+            "context": { "type": "string" },
+            "interests": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "nextAction": { "type": "string" },
+            "followUpAt": { "type": "string" },
+            "notes": { "type": "string" }
+          },
+          "required": ["id", "name", "role", "organization", "context", "interests", "nextAction", "followUpAt", "notes"]
+        }
+      },
+      "required": ["name", "role", "metaText", "interestRows", "nextAction", "followUpAt", "notes", "contactId", "hasRole", "hasMeta", "hasInterests", "hasNextAction", "hasFollowUpAt", "hasNotes", "canDelete", "isDeleteConfirm", "selectedAction", "actionRows", "primaryKeyHint", "secondaryKeyHint", "statusText", "contact"]
+    }
+  }
+}

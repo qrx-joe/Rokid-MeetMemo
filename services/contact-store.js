@@ -1,69 +1,172 @@
 // services/contact-store.js
 //
-// MeetMemo storage adapter. Per SPEC.md §6 and §11, persistence MUST live
-// behind one adapter — pages never touch storage primitives directly.
-//
-// MVP implementation: module-scoped in-memory Maps. Persistence across app
-// launches is intentionally NOT in scope yet. When wx.storage proves stable
-// on the target Rokid device, swap the Map ops for wx.getStorage /
-// wx.setStorage calls; the exported interface MUST stay identical so
-// pages/capture and pages/contact-card do not change.
-//
-// All methods are async (return Promises) on purpose. The current Map
-// implementation could be sync, but exposing async now makes the wx.storage
-// migration a no-op for callers.
+// MeetMemo storage adapter. Pages must use this module instead of touching
+// wx storage directly; that keeps persistence swappable and testable.
 
-// --- internal state ------------------------------------------------------
+const STORAGE_KEY = 'meetmemo.v1.store';
+const UNKNOWN = '待补充';
 
-const contacts = new Map();   // id -> Contact
-const followups = new Map();  // id -> Followup
+const contacts = new Map();
+const followups = new Map();
 
-// Seed one demo contact so pages/contact-card stays renderable when opened
-// directly (e.g. from a hard-coded link or first-launch demo).
-// The seed is intentionally the same 王磊 sample SPEC.md §7 illustrates.
+// Temporary in-memory photo storage.
+// Photos are stored as base64 data URLs between photo-capture and capture pages.
+// They are merged into the contact record on save and cleared afterward.
+const photoData = new Map();
+
 const DEMO_CONTACT_ID = 'contact_demo_wanglei';
-contacts.set(DEMO_CONTACT_ID, {
-  id: DEMO_CONTACT_ID,
-  name: '王磊',
-  role: '教育 SaaS 创始人',
-  organization: '待补充',
-  context: 'AI 创业活动',
-  interests: ['AIUI Demo'],
-  nextAction: '下周二发送 Demo 资料',
-  followUpAt: '2026-06-09',
-  notes: '对眼镜端低打扰交互感兴趣',
-  createdAt: '2026-06-06T10:00:00+08:00',
-  updatedAt: '2026-06-06T10:00:00+08:00'
-});
-followups.set('followup_demo_wanglei', {
-  id: 'followup_demo_wanglei',
-  contactId: DEMO_CONTACT_ID,
-  title: '发送 Demo 资料',
-  dueAt: '2026-06-09',
-  status: 'pending'
-});
+const DEMO_FOLLOWUP_ID = 'followup_demo_wanglei';
 
-// --- helpers -------------------------------------------------------------
+let loaded = false;
+let wxModule = null;
+let wxResolved = false;
+
+function demoContact() {
+  return {
+    id: DEMO_CONTACT_ID,
+    name: '王磊',
+    role: '教育 SaaS 创始人',
+    organization: UNKNOWN,
+    context: 'AI 创业活动',
+    interests: ['AIUI Demo'],
+    nextAction: '下周二发送 Demo 资料',
+    followUpAt: '2026-06-09',
+    notes: '对眼镜端低打扰交互感兴趣',
+    createdAt: '2026-06-06T10:00:00+08:00',
+    updatedAt: '2026-06-06T10:00:00+08:00'
+  };
+}
+
+function demoFollowup() {
+  return {
+    id: DEMO_FOLLOWUP_ID,
+    contactId: DEMO_CONTACT_ID,
+    title: '发送 Demo 资料',
+    dueAt: '2026-06-09',
+    status: 'pending'
+  };
+}
+
+function seedDemoData() {
+  if (!contacts.has(DEMO_CONTACT_ID)) {
+    contacts.set(DEMO_CONTACT_ID, demoContact());
+  }
+  if (!followups.has(DEMO_FOLLOWUP_ID)) {
+    followups.set(DEMO_FOLLOWUP_ID, demoFollowup());
+  }
+}
+
+async function getWx() {
+  if (wxResolved) return wxModule;
+  wxResolved = true;
+
+  if (globalThis.wx) {
+    wxModule = globalThis.wx;
+    return wxModule;
+  }
+
+  try {
+    const mod = await import('wx');
+    wxModule = mod.default;
+  } catch (error) {
+    wxModule = null;
+  }
+  return wxModule;
+}
+
+function normalizeContact(draft, existing, now, id) {
+  return {
+    id,
+    name: draft.name || '',
+    role: draft.role || '',
+    organization: draft.organization || UNKNOWN,
+    context: draft.context || '',
+    interests: Array.isArray(draft.interests) ? [...draft.interests] : [],
+    nextAction: draft.nextAction || '',
+    followUpAt: draft.followUpAt || '',
+    notes: draft.notes || '',
+    photo: draft.photo || '',
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now
+  };
+}
+
+function snapshot() {
+  return {
+    contacts: Array.from(contacts.values()),
+    followups: Array.from(followups.values())
+  };
+}
+
+function applySnapshot(data) {
+  contacts.clear();
+  followups.clear();
+
+  if (data && Array.isArray(data.contacts)) {
+    for (const contact of data.contacts) {
+      if (contact && contact.id) {
+        contacts.set(contact.id, {
+          ...contact,
+          interests: Array.isArray(contact.interests) ? [...contact.interests] : []
+        });
+      }
+    }
+  }
+
+  if (data && Array.isArray(data.followups)) {
+    for (const followup of data.followups) {
+      if (followup && followup.id) {
+        followups.set(followup.id, { ...followup });
+      }
+    }
+  }
+}
+
+async function loadState() {
+  if (loaded) return;
+  loaded = true;
+
+  const wx = await getWx();
+  if (wx && typeof wx.getStorageSync === 'function') {
+    try {
+      const stored = wx.getStorageSync(STORAGE_KEY);
+      if (stored) {
+        applySnapshot(stored);
+      }
+    } catch (error) {
+      console.log('[MeetMemo] storage read failed, using memory fallback', error);
+    }
+  }
+
+  seedDemoData();
+}
+
+async function saveState() {
+  const wx = await getWx();
+  if (!wx || typeof wx.setStorageSync !== 'function') {
+    return;
+  }
+
+  try {
+    wx.setStorageSync(STORAGE_KEY, snapshot());
+  } catch (error) {
+    // Persistence failure must not crash capture. The in-memory copy still
+    // keeps the current session usable; device testing should surface logs.
+    console.log('[MeetMemo] storage write failed, using memory fallback', error);
+  }
+}
 
 function nowIso() {
-  // Plain ISO 8601 with local-ish offset is fine for MVP; we don't sort by
-  // sub-second precision and there is no cross-device sync to worry about.
   return new Date().toISOString();
 }
 
 function newId(prefix) {
-  // crypto.randomUUID is listed as supported in aiui-dev SKILL.md §8.
-  // Fallback path is defensive only — if randomUUID is missing we still
-  // produce a unique-enough id rather than crashing the save flow.
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}_${crypto.randomUUID()}`;
   }
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
-// Follow-ups are derived from contacts; whenever a contact is saved with
-// both nextAction and followUpAt, ensure a matching follow-up exists.
-// Returning the followup lets callers reference it if needed.
 function syncFollowupForContact(contact) {
   const hasAction = Boolean(contact.nextAction && contact.nextAction.trim());
   const hasDate = Boolean(contact.followUpAt && contact.followUpAt.trim());
@@ -71,20 +174,20 @@ function syncFollowupForContact(contact) {
     return null;
   }
 
-  // One contact -> at most one MVP follow-up. Find existing by contactId,
-  // refresh its title/dueAt; otherwise create.
   let existing = null;
-  for (const f of followups.values()) {
-    if (f.contactId === contact.id) {
-      existing = f;
+  for (const followup of followups.values()) {
+    if (followup.contactId === contact.id) {
+      existing = followup;
       break;
     }
   }
+
   if (existing) {
     existing.title = contact.nextAction;
     existing.dueAt = contact.followUpAt;
     return existing;
   }
+
   const created = {
     id: newId('followup'),
     contactId: contact.id,
@@ -96,48 +199,36 @@ function syncFollowupForContact(contact) {
   return created;
 }
 
-// --- public API ----------------------------------------------------------
-
 export const contactStore = {
   async listContacts() {
-    // Newest first — capture flow expects "recent contacts" ordering.
+    await loadState();
     return Array.from(contacts.values()).sort((a, b) => {
       return (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
   },
 
   async getContact(id) {
+    await loadState();
     if (!id) return null;
     return contacts.get(id) || null;
   },
 
   async saveContact(draft) {
-    // Defensive copy so the caller can keep mutating their object without
-    // accidentally writing back through the Map reference.
+    await loadState();
+
     const now = nowIso();
     const id = draft.id || newId('contact');
     const existing = contacts.get(id);
-    const stored = {
-      id,
-      name: draft.name || '',
-      role: draft.role || '',
-      // Keep '待补充' explicit per SPEC.md §7 — never invent values silently.
-      organization: draft.organization || '待补充',
-      context: draft.context || '',
-      interests: Array.isArray(draft.interests) ? [...draft.interests] : [],
-      nextAction: draft.nextAction || '',
-      followUpAt: draft.followUpAt || '',
-      notes: draft.notes || '',
-      createdAt: existing ? existing.createdAt : now,
-      updatedAt: now
-    };
+    const stored = normalizeContact(draft, existing, now, id);
+
     contacts.set(id, stored);
     syncFollowupForContact(stored);
+    await saveState();
     return stored;
   },
 
   async listFollowups() {
-    // Pending first, then by dueAt ascending. MVP — no week-grouping yet.
+    await loadState();
     return Array.from(followups.values()).sort((a, b) => {
       if (a.status !== b.status) {
         return a.status === 'pending' ? -1 : 1;
@@ -147,13 +238,65 @@ export const contactStore = {
   },
 
   async updateFollowupStatus(id, status) {
-    const f = followups.get(id);
-    if (!f) return null;
-    f.status = status;
-    return f;
+    await loadState();
+    const followup = followups.get(id);
+    if (!followup) return null;
+    followup.status = status;
+    await saveState();
+    return followup;
+  },
+
+  async deleteContact(id) {
+    await loadState();
+    if (!id || !contacts.has(id)) return false;
+
+    contacts.delete(id);
+    for (const followup of Array.from(followups.values())) {
+      if (followup.contactId === id) {
+        followups.delete(followup.id);
+      }
+    }
+    await saveState();
+    return true;
+  },
+
+  async deleteFollowup(id) {
+    await loadState();
+    if (!id || !followups.has(id)) return false;
+
+    followups.delete(id);
+    await saveState();
+    return true;
+  },
+
+  // ---------- Photo storage (in-memory, page-to-page handoff) ----------
+  savePhoto(base64Data) {
+    const key = newId('photo');
+    photoData.set(key, base64Data);
+    return key;
+  },
+
+  getPhoto(key) {
+    return photoData.get(key) || '';
+  },
+
+  deletePhoto(key) {
+    photoData.delete(key);
   }
 };
 
-// Exported for tests / direct seeding inspection only. Not part of the
-// stable adapter contract — do not call from pages.
-export const __internal = { contacts, followups, DEMO_CONTACT_ID };
+// Test-only hooks. Pages should not use these except for DEMO_CONTACT_ID,
+// which keeps contact-card renderable when opened directly.
+export const __internal = {
+  STORAGE_KEY,
+  contacts,
+  followups,
+  DEMO_CONTACT_ID,
+  async resetForTest() {
+    loaded = false;
+    wxModule = null;
+    wxResolved = false;
+    contacts.clear();
+    followups.clear();
+  }
+};

@@ -1,0 +1,40 @@
+{
+  "navigationBarTitleText": "待跟进",
+  "description": "Hardware-key follow-up HUD. Arrow keys select one task, Enter toggles pending/done, ArrowRight opens the related contact, Backspace returns.",
+  "schema": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "contactId": { "type": "string" },
+              "contactName": { "type": "string" },
+              "title": { "type": "string" },
+              "dueAt": { "type": "string" },
+              "status": { "type": "string" },
+              "className": { "type": "string" },
+              "statusText": { "type": "string" },
+              "actionText": { "type": "string" },
+              "metaText": { "type": "string" }
+            },
+            "required": ["id", "contactId", "contactName", "title", "status", "className"]
+          }
+        },
+        "selectedTitle": { "type": "string" },
+        "selectedMeta": { "type": "string" },
+        "selectedAction": { "type": "string" },
+        "secondaryAction": { "type": "string" },
+        "selectedId": { "type": "string" },
+        "hasItems": { "type": "boolean" },
+        "isEmpty": { "type": "boolean" },
+        "isDeleteConfirm": { "type": "boolean" },
+        "statusText": { "type": "string" }
+      },
+      "required": ["items", "selectedTitle", "selectedMeta", "selectedAction", "secondaryAction", "selectedId", "hasItems", "isEmpty", "isDeleteConfirm", "statusText"]
+    }
+  }
+}

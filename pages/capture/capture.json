@@ -1,0 +1,56 @@
+{
+  "navigationBarTitleText": "快速记录",
+  "description": "Rokid glasses HUD capture flow. Enter starts voice capture for the current step, Backspace goes back or exits. The page gathers one raw note, prompts for missing structured fields, shows a review card, and saves only after explicit confirmation.",
+  "schema": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string" },
+        "statusText": { "type": "string" },
+        "promptText": { "type": "string" },
+        "primaryText": { "type": "string" },
+        "hintText": { "type": "string" },
+        "progressText": { "type": "string" },
+        "summaryRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "value": { "type": "string" }
+            },
+            "required": ["label", "value"]
+          }
+        },
+        "hasError": { "type": "boolean" },
+        "isReview": { "type": "boolean" },
+        "isSaved": { "type": "boolean" },
+        "stepIndex": { "type": "number" },
+        "savedId": { "type": "string" },
+        "errorMsg": { "type": "string" },
+        "draft": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "organization": { "type": "string" },
+            "context": { "type": "string" },
+            "interests": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "nextAction": { "type": "string" },
+            "followUpAt": { "type": "string" },
+            "notes": { "type": "string" }
+          },
+          "required": ["id", "name", "role", "organization", "context", "interests", "nextAction", "followUpAt", "notes"]
+        },
+        "isCapturing": { "type": "boolean" },
+        "showSummary": { "type": "boolean" },
+        "showNote": { "type": "boolean" }
+      },
+      "required": ["mode", "statusText", "promptText", "primaryText", "hintText", "progressText", "summaryRows", "hasError", "isReview", "isSaved", "stepIndex", "savedId", "errorMsg", "draft", "isCapturing", "showSummary", "showNote"]
+    }
+  }
+}

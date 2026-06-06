@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/photo-capture/photo-capture",
     "pages/capture/capture",
     "pages/contact-card/contact-card",
     "pages/followups/followups"

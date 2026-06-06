@@ -1,0 +1,46 @@
+{
+  "navigationBarTitleText": "MeetMemo",
+  "description": "Home HUD for Rokid glasses. Hardware keys select quick note, follow-up review, or recent contact entry without touch input.",
+  "schema": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "statusText": { "type": "string" },
+        "primaryText": { "type": "string" },
+        "hintText": { "type": "string" },
+        "actionRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "detail": { "type": "string" },
+              "className": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["id", "label", "detail", "className"]
+          }
+        },
+        "recentRows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "detail": { "type": "string" }
+            },
+            "required": ["id", "name", "detail"]
+          }
+        },
+        "hasRecent": { "type": "boolean" },
+        "pendingText": { "type": "string" },
+        "recentText": { "type": "string" },
+        "pendingCount": { "type": "number" },
+        "selectedAction": { "type": "string" }
+      },
+      "required": ["statusText", "primaryText", "hintText", "actionRows", "recentRows", "hasRecent", "pendingText", "recentText", "pendingCount", "selectedAction"]
+    }
+  }
+}
