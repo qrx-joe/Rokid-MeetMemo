@@ -1,7 +1,9 @@
 {
   "pages": [
+    "pages/index/index",
     "pages/capture/capture",
-    "pages/contact-card/contact-card"
+    "pages/contact-card/contact-card",
+    "pages/followups/followups"
   ],
   "window": {
     "navigationBarTitleText": "MeetMemo",

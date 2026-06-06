@@ -132,5 +132,52 @@ End-to-end capture → store → display flow, all from text input. Two services
 
 The previous round's contact-card was committed without device verification, and this round was built on top of it. If contact-card has a token or `ink:if` issue on the real Rokid runtime, capture's save-then-navigate will land on a broken page. Mitigation: validate both pages in a single device session next.
 
+## 2026-06-06 (late — navigation backbone)
+
+### Built
+
+Navigation now closes: index → capture → contact-card → followups → contact-card. Four pages, one store, one parser.
+
+- `pages/index/index.ink`: home with "开始记录" CTA, `scroll-view`-bounded recent contacts list (5 max), and a "待跟进 N" row. `onLoad` + `onShow` both call `_refresh()` so returning from any sub-page picks up new state.
+- `pages/followups/followups.ink`: pending / completed sections. Each row resolves the contact name lazily via `contactStore.getContact()` rather than duplicating contact fields in the followup record. Row body navigates to the contact card; an inline `catchtap` button toggles `pending` ↔ `done`.
+- `app.json`: pages array now `['pages/index/index', 'pages/capture/capture', 'pages/contact-card/contact-card', 'pages/followups/followups']` — index is the new homepage; capture/contact-card/followups become sub-routes with the default navigation back button.
+
+### The single design principle this round
+
+**Do not introduce a new runtime assumption.** Index and followups reuse exactly the patterns capture proved on paper:
+
+- `async onLoad` (and the new `async onShow`) returning a Promise the runtime can ignore.
+- `wx.navigateTo({ url: '/pages/...?key=value' })` with leading slash and `encodeURIComponent` on dynamic ids.
+- `e.currentTarget.dataset.<camelCase>` for dispatching handlers — same as capture's `handleField`.
+- `catchtap` to stop propagation when an inline button sits inside a `bindtap` row.
+- `var(--token)` exclusively; no hex literals.
+- `scroll-view` with `max-height: Npx` to keep cards inside the SPEC §5 height envelope.
+
+The payoff: if device verification surfaces a runtime gap, the fix lands in the same shape across all four pages. One investigation, one mechanical refactor.
+
+### Decisions made this round
+
+| Decision | Why | Risk if wrong |
+| --- | --- | --- |
+| `onShow` re-pulls store on every visibility | Captures changes made from sub-pages without an event bus | If `onShow` never fires, the list goes stale until app relaunch — graceful degrade |
+| Followup rows resolve contact name via `getContact` per row | Followup records stay normalized; no duplicated contact name to update on rename | Slight Promise.all cost; trivial at MVP list sizes |
+| `index.recentContacts` is a 4-field projection, not full Contact objects | Smaller setData payload, cleaner template binding | None — the contact card pulls the full object on tap |
+| Empty states render only when `loaded` is true | Prevents "no contacts" flashing before the async pull resolves | None — purely a UX nicety |
+| `followups` page uses `catchtap` on action buttons | Standard mini-program propagation control | If `catchtap` is unsupported, the row tap fires too — both actions land on the same followup; functionally noisy but not destructive |
+| `scroll-view max-height` on three pages | Honors SPEC §5 height envelope without truncating long lists | If Ink ignores `max-height`, switch to `height` in 3 places |
+
+### The carried risk reached its third round
+
+This is now the third stacked commit without device verification. NEXT.md is explicit: stop, validate, then continue. If a runtime gap exists, fixing 4 pages in one pass is acceptable; fixing 7 pages after persistence and voice land would not be.
+
+### Deferred deliberately (unchanged)
+
+- Persistence (`wx.storage`)
+- LLM parser (Phase 2)
+- Voice integration (Phase 3)
+- `services/demo-data.js` extraction
+- Date picker for `followUpAt`
+
+
 
 

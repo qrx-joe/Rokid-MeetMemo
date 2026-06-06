@@ -2,52 +2,64 @@
 
 ## Current Focus
 
-Wire the navigation backbone: `pages/index/index.ink` as the home page, and `pages/followups/followups.ink` for pending follow-ups. Then voice integration as a separate milestone.
+**Stop writing new code. Verify on device.**
+
+Four pages and two services are in tree, all using the same minimal set of runtime assumptions. If those assumptions hold, the MVP UI loop is complete; if any one of them fails, the fix lands in roughly the same place across every page. Either way, the verification answer is short.
 
 ## Why this focus
 
-Capture → contact-card flow now exists end-to-end (text → store → display). The next leverage point is **return visits**: a user who saved someone two days ago needs a way to find them and check their pending follow-ups. That requires `index` (recent contacts + follow-up count) and `followups` (list view). Without these two, the app forgets everything after the first save from a user's point of view.
+Three rounds of code without device verification is the carry. Continuing to stack more code (persistence, voice, LLM) before testing what is already written multiplies the rollback cost. The leverage is now on the device, not in the editor.
 
-## Next 3 Tasks (in strict order)
+## Verification Plan (single device session)
 
-1. **`pages/index/index.ink` — home page.**
-   - Sections: "Recent" (latest 3–5 contacts from `contactStore.listContacts()`) + "Follow-ups" badge (count from `contactStore.listFollowups()`).
-   - Primary CTA: "Start quick note" → `wx.navigateTo` to capture.
-   - Tap on a recent contact → navigate to contact-card with `?id=`.
-   - Empty state: short copy + only the "Start quick note" button.
-   - Make this the new homepage in `app.json`; capture becomes a sub-route (navigated to from index).
+Run through `TODO.md` → Device Verification top to bottom. If any step fails, paste the InkView/devtools error and the failing page name; the fix lives in one of these known places:
 
-2. **`pages/followups/followups.ink` — pending follow-ups list.**
-   - Sections per `SPEC.md` §10.4: Pending + Completed (MVP scope).
-   - Each row: title, due date, source contact name (resolved via `contactStore.getContact(contactId)`).
-   - Tap row to open the source contact card; long-press / dedicated button to mark done.
-   - Empty state: short copy, link back to index.
+| Symptom | Suspected assumption | Fix location |
+| --- | --- | --- |
+| `currentTarget.dataset` undefined | Ink doesn't forward dataset | All pages — expand dataset reads into per-element handlers |
+| `setData` ignores dotted path | Ink doesn't honor `'a.b': v` form | `capture.handleField`, `index._refresh`, `followups._refresh` — rewrite as full object replacements |
+| `wx.navigateTo` rejects leading `/` | Ink uses relative paths only | Drop the `/` in all `navigateTo` calls (3 sites) |
+| `async onLoad`/`onShow` not awaited | Ink calls but ignores Promise | Convert to `.then()` chains — visible behavior identical |
+| `scroll-view max-height` ignored | Ink wants fixed `height` | Change `max-height: Npx` → `height: Npx` in capture/index/followups |
+| `var(--card-padding)` etc unknown | Token name differs in current Ink | Cross-check `.agents/skills/aiui-dev/SKILL.md` §5.4 — swap to nearest supported token |
+| `catchtap` does not stop propagation on `<button>` inside `<view bindtap>` | Ink button event model differs | Switch row body to `<view>` instead of `<view bindtap>`; move tap target to an inner `<text>` |
+| `onShow` never fires after navigateBack | Lifecycle gap | Add an explicit refresh trigger (custom event) or accept stale list until manual reload |
 
-3. **`services/demo-data.js` extraction (only if needed).**
-   - If the home page wants more than the one seeded contact to look populated, move the demo seed out of `contactStore` into `services/demo-data.js` and have `contactStore` load it conditionally.
-   - **Skip this task entirely** if one demo contact is enough to validate the UI on device.
+## Next 3 Tasks (after verification passes)
+
+1. **Persistence: swap `contactStore` to `wx.storage`.**
+   - Use keys `meetmemo:contacts:v1` and `meetmemo:followups:v1`.
+   - Read-on-init, write-on-mutate. No in-memory cache invalidation logic in MVP — the store is the only writer.
+   - Keep the in-memory seeded demo as fallback ONLY when storage is empty (first launch).
+   - **The public adapter API must not change.** If a single page change is needed, the swap is wrong.
+
+2. **Voice input in capture (input mode).**
+   - Read `.agents/skills/aiui-dev/apis-wx.md` for `wx.speech.startRecognition` first.
+   - Add a mic button next to the textarea; press to start, press again to stop; transcript appended to the textarea value.
+   - Visible recording state (per `SPEC.md` §8). No auto-listen.
+   - Text input remains the primary path.
+
+3. **LLM parser (Phase 2).**
+   - Replace `parser.parse()` body with `LanguageModel.create() + session.prompt()` per SKILL.md §10.1.
+   - Output must conform to the Contact schema. Validation rejects unknown shapes.
+   - Confirmation card stays editable — LLM output is suggestion, not save.
 
 ## Do Not Do Yet
 
-- Do not integrate always-on recording.
-- Do not use camera or face recognition.
-- Do not build CRM-level relationship graphs.
-- Do not write any regex-based parser (see `SPEC.md` §6.2).
+- Do not begin any of the Next 3 Tasks until at least the capture → save → contact-card round trip is verified on device.
 - Do not add `priority` to the data model.
-- Do not swap `contactStore` to `wx.storage` until the navigation backbone is verified on device — keeping it in-memory makes iteration faster and an iteration crash won't corrupt state.
-- Do not add LLM parsing until index + followups feel right on device.
+- Do not write any regex-based parser (`SPEC.md` §6.2).
+- Do not over-engineer the storage swap — `wx.setStorage`/`wx.getStorage` is enough; no encryption, no migration tooling in MVP.
+- Do not enable always-on recording or background listening.
 
 ## Definition Of Done For The Current Focus
 
-User can:
-1. Open the app and land on `pages/index/index.ink`.
-2. See recent contacts and a pending follow-up count.
-3. Tap "Start quick note" → capture → save → bounce back to index with the new contact visible.
-4. Tap a recent contact → see the relationship card.
-5. Tap the follow-up count → see the pending list.
+A short clip taken on the Rokid AR glasses showing:
+1. App opens to `index` with 王磊 seed visible and "待跟进 1" badge.
+2. Tap "开始记录" → type a note → 下一步 → fill in name → 保存.
+3. App lands on `contact-card` showing the just-saved person.
+4. Navigate back to `index` → the new person appears at top of the recent list.
+5. Tap "待跟进" → followups list shows both 王磊's and the new person's pending follow-up (if a date was entered).
+6. Tap 完成 on one → moves to 已完成 section.
 
-Verified on the Rokid AR glasses with a screenshot or short clip.
-
-## Pending Device Verification (carried over)
-
-Before starting the next 3 tasks above, please run the verification listed in `TODO.md` → Device Verification. If the current capture → contact-card flow has rendering or runtime issues on device, fixing them is higher priority than building more pages.
+If any step fails, the page where it fails plus the error message is enough to unblock the fix.
