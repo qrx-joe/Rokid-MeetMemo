@@ -1,0 +1,44 @@
+# Dependencies (not used yet, but reserved)
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temp / cache
+.cache/
+.tmp/
+tmp/
+
+# Reference dumps: large vendor bundles we don't author
+# Keep these in reference/ for documentation lookup only; not part of the project.
+# Comment the next 3 lines if you want them tracked.
+reference/*.js
+reference/*.bundle.js
+reference/rokid_*.html
+
+# Python venv (in case a tool drops one here)
+.venv/
+__pycache__/
+*.pyc
