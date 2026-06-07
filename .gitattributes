@@ -1,0 +1,30 @@
+# 统一换行符策略:仓库内所有文本文件使用 LF,仅 Windows 平台专属脚本保留 CRLF
+
+# 默认所有文本文件为 LF
+* text=auto eol=lf
+
+# Windows 平台专属脚本保留 CRLF
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# 已明确为二进制的文件
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.webp         binary
+*.woff         binary
+*.woff2        binary
+*.ttf          binary
+*.eot          binary
+*.wasm         binary
+*.zip          binary
+*.gz           binary
+*.tar          binary
+*.aix          binary
+
+# 锁定文件保持 LF (npm/yarn 跨平台一致)
+package-lock.json text eol=lf
+yarn.lock       text eol=lf
